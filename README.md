@@ -12,7 +12,7 @@ Each lesson is inside `notebooks/`, progressively guiding you through:
 
 ---
 
-## 🚀 Quick Setup
+## Quick Setup
 
 ### 1. Clone the repository
 
@@ -98,7 +98,7 @@ Then open the `notebooks/` folder and start with `lesson1_intro_to_rag.ipynb`.
 
 ---
 
-## 📦 Requirements
+## Requirements
 
 - Python 3.10
 - Poetry
@@ -107,7 +107,7 @@ Then open the `notebooks/` folder and start with `lesson1_intro_to_rag.ipynb`.
 
 ---
 
-## ✅ Notes
+## Notes
 
 - This repo uses **Poetry** for dependency management.
 - Environment variables are loaded securely using **python-dotenv**.
