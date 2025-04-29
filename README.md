@@ -121,4 +121,4 @@ Then open the `notebooks/` folder and start with `lesson1_intro_to_rag.ipynb`.
 
 ---
 
-Happy learning! 🚀
+Happy learning! 
