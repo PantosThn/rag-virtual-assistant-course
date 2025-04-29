@@ -10,7 +10,13 @@ Each lesson is inside `notebooks/`, progressively guiding you through:
 - Prompt chaining
 - Building a full RAG-powered assistant
 
----
+## 🔑 API Keys Setup
+
+Before running the lessons, make sure you have the following API keys:
+
+- **OpenAI API Key**: Create or view your key here → [OpenAI API Keys](https://platform.openai.com/api-keys)
+- **LangSmith API Key**: Create or manage your key here → [LangSmith Settings](https://smith.langchain.com/o/0a40799b-2bb0-55cc-a7b6-c65896228e62/settings)
+
 
 ## Quick Setup
 
