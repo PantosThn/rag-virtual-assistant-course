@@ -9,15 +9,15 @@ Each lesson is inside `notebooks/`, progressively guiding you through:
 - Prompt chaining
 - Building a full RAG-powered assistant
 
-## 🔑 API Keys Setup
+## API Keys Setup
 
 Before running the lessons, make sure you have at least **one** of the following API keys:
 
-- ✅ **Groq API Key** (Recommended – Free and fast): [Create a Groq account](https://console.groq.com)
-- ✅ **OpenAI API Key**: [OpenAI API Keys](https://platform.openai.com/api-keys)
-- 🔍 **LangSmith API Key** (Optional – for tracing): [LangSmith Settings](https://smith.langchain.com/o/0a40799b-2bb0-55cc-a7b6-c65896228e62/settings)
+- **Groq API Key** (Recommended – Free and fast): [Create a Groq account](https://console.groq.com)
+- **OpenAI API Key**: [OpenAI API Keys](https://platform.openai.com/api-keys)
+- **LangSmith API Key** (Optional – for tracing): [LangSmith Settings](https://smith.langchain.com/o/0a40799b-2bb0-55cc-a7b6-c65896228e62/settings)
 
-> ⚠️ If both Groq and OpenAI keys are set, **Groq will be used by default**.  
+> If both Groq and OpenAI keys are set, **OpenAI will be used by default**.  
 > You only need **one of the two** to run the virtual assistant.
 
 ## Quick Setup
@@ -25,7 +25,7 @@ Before running the lessons, make sure you have at least **one** of the following
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/rag-virtual-assistant-course.git
+git clone https://github.com/PantosThn/rag-virtual-assistant-course.git
 cd rag-virtual-assistant-course
 ```
 
