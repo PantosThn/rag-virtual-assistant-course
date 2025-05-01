@@ -25,13 +25,15 @@ from pydantic import BaseModel
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.schema import Document
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
 
 from dotenv import load_dotenv
 
@@ -44,6 +46,7 @@ load_dotenv(ROOT_DIR / ".env")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+openai_key = os.getenv("OPENAI_API_KEY")
 
 if not GROQ_API_KEY:
     raise RuntimeError("Missing GROQ_API_KEY. Set it in .env or export it.")
@@ -52,9 +55,13 @@ if not GROQ_API_KEY:
 # 2. Build vector store from static web docs
 # ----------------------------------------------------------------------------
 URLS = [
-    "https://lilianweng.github.io/posts/2023-06-23-agent/",
-    "https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/",
-    "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
+    "https://www.reuters.com/world/europe/greece-ask-eu-fiscal-leeway-defence-spending-minister-says-2025-04-29/",
+        "https://www.ekathimerini.com/economy/1264299/moodys-upgrade-of-the-greek-economy-is-significant-says-govt-spox/",
+        "https://www.imf.org/en/News/Articles/2025/04/04/pr2589-greece-imf-executive-board-concludes-2025-article-iv-consultation",
+        "https://economy-finance.ec.europa.eu/economic-surveillance-eu-economies/greece/economic-forecast-greece_en",
+        "https://www.reuters.com/markets/europe/greece-repay-first-bailout-loans-by-2031-10-years-early-2025-04-11/",
+        "https://www.reuters.com/world/europe/bribery-scandals-greeces-public-sector-show-persistence-corruption-2025-03-27",
+        "https://www.reuters.com/markets/europe/greek-economy-surges-after-decade-pain-2024-04-18/"
 ]
 
 print("[backend] Building vector store – may take ~30s on first run …")
@@ -66,6 +73,8 @@ splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=250)
 _doc_chunks = splitter.split_documents(_raw_docs)
 
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+# embeddings = OpenAIEmbeddings()
+
 vectorstore = Chroma.from_documents(
     documents=_doc_chunks,
     collection_name="rag-chroma",
@@ -100,7 +109,7 @@ question_rewriter = REWRITE_PROMPT | llm_base | StrOutputParser()
 
 # — RAG answer generation -----------------------------------------------------
 GEN_PROMPT = ChatPromptTemplate.from_template(
-    """Answer the question using only the context provided. If the context is insufficient, say you don't know. Be concise.\n\n{context}\n\nQuestion: {question}\nAnswer:"""
+    """Answer the question using only the context provided. If the context is insufficient, say you don't know.\n\n{context}\n\nQuestion: {question}\nAnswer:"""
 )
 rag_chain = GEN_PROMPT | llm_base | StrOutputParser()
 
