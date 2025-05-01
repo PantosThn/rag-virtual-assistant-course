@@ -20,6 +20,8 @@ sentence-transformers = "^4.1.0"
 langchain-huggingface = "^0.1.2"
 ipywidgets = "^8.1.6"
 langgraph = "^0.4.1"
+requests = "^2.32.3"
+gradio = "^5.28.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

@@ -8,43 +8,48 @@
 #     uvicorn backend.main:app --reload
 # ----------------------------------------------------------------------------
 #  Environment variables required at runtime (export or put in .env):
-#     OPENAI_API_KEY   – OpenAI key
-#     TAVILY_API_KEY   – Tavily Search key
+#     GROQ_API_KEY        – your Groq API key
+#     TAVILY_API_KEY      – your Tavily Search API key
 # ----------------------------------------------------------------------------
+
+from __future__ import annotations
 
 import os
 from pathlib import Path
 from typing import List, TypedDict
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel  # ✅ use Pydantic v2 directly
+from pydantic import BaseModel
 
+# LangChain & friends ---------------------------------------------------------
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.schema import Document
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
+from langchain_openai import ChatOpenAI
 
 from dotenv import load_dotenv
 
 # ----------------------------------------------------------------------------
-# 1. Load .env and validate keys
+# 1. Load environment and validate keys
 # ----------------------------------------------------------------------------
-
-os.environ.setdefault("OPENAI_API_KEY", "")
-os.environ.setdefault("TAVILY_API_KEY", "")
-
-ROOT_DIR = Path(__file__).resolve().parent.parent  # → project root
+ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
+if not GROQ_API_KEY:
+    raise RuntimeError("Missing GROQ_API_KEY. Set it in .env or export it.")
 
 # ----------------------------------------------------------------------------
-# 2. Build vector store (one-time, in-memory)
+# 2. Build vector store from static web docs
 # ----------------------------------------------------------------------------
 URLS = [
     "https://lilianweng.github.io/posts/2023-06-23-agent/",
@@ -52,85 +57,58 @@ URLS = [
     "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
 ]
 
-print("[backend] Building vector store – occurs only once at startup …")
-_raw_docs = []
+print("[backend] Building vector store – may take ~30s on first run …")
+_raw_docs: List[Document] = []
 for url in URLS:
     _raw_docs.extend(WebBaseLoader(url).load())
 
-splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    chunk_size=250,
-    chunk_overlap=0,
-)
-_doc_splits = splitter.split_documents(_raw_docs)
+splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=250)
+_doc_chunks = splitter.split_documents(_raw_docs)
 
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 vectorstore = Chroma.from_documents(
-    documents=_doc_splits,
+    documents=_doc_chunks,
     collection_name="rag-chroma",
-    embedding=OpenAIEmbeddings(),
+    embedding=embeddings,
 )
 retriever = vectorstore.as_retriever()
 
 # ----------------------------------------------------------------------------
-# 3. LLM helper chains (grader, re-writer, generator)
+# 3. LLM helper chains (powered by Groq-compatible ChatOpenAI)
 # ----------------------------------------------------------------------------
-class GradeDocuments(BaseModel):
-    """Binary score for relevance check on retrieved documents."""
-
-    binary_score: str
+llm_base = ChatOpenAI(
+    model_name=GROQ_MODEL,
+    temperature=0,
+    openai_api_key=GROQ_API_KEY,
+    openai_api_base="https://api.groq.com/openai/v1",
+    model_kwargs={"response_format": {"type": "text"}},
+)
 
 # — Retrieval grader ----------------------------------------------------------
-SYSTEM_GRADER = (
-    "You are a grader assessing relevance of a retrieved document to a user "
-    "question. If the document contains keyword(s) or semantic meaning related "
-    "to the question, grade it as relevant. Give a binary 'yes' or 'no'."
-)
+GRADER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", "You are a grader assessing relevance of a retrieved document to a user question. Answer strictly with 'yes' or 'no'."),
+    ("human", "Document:\n{document}\n\nQuestion: {question}"),
+])
+retrieval_grader = GRADER_PROMPT | llm_base | StrOutputParser()
 
-grade_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", SYSTEM_GRADER),
-        ("human", "Retrieved document:\n\n {document} \n\n User question: {question}"),
-    ]
-)
+# — Question rewriter --------------------------------------------------------- ---------------------------------------------------------
+REWRITE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", "You rewrite the input question to a version better suited for web search, preserving meaning."),
+    ("human", "Original: {question}\nRewritten:"),
+])
+question_rewriter = REWRITE_PROMPT | llm_base | StrOutputParser()
 
-llm_grader = (
-    ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
-    .with_structured_output(GradeDocuments)
-)
-retrieval_grader = grade_prompt | llm_grader
-
-# — Question re-writer --------------------------------------------------------
-REWRITE_SYSTEM = (
-    "You are a question re-writer that converts an input question into a better "
-    "version optimized for web search."
-)
-
-rewrite_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", REWRITE_SYSTEM),
-        (
-            "human",
-            "Here is the initial question:\n\n{question}\nFormulate an improved question.",
-        ),
-    ]
-)
-
-question_rewriter = (
-    rewrite_prompt
-    | ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
-    | StrOutputParser()
-)
-
-# — RAG generator -------------------------------------------------------------
+# — RAG answer generation -----------------------------------------------------
 GEN_PROMPT = ChatPromptTemplate.from_template(
-    """Use the following context to answer the question.\n\n{context}\n\nQuestion: {question}\nAnswer concisely:"""
+    """Answer the question using only the context provided. If the context is insufficient, say you don't know. Be concise.\n\n{context}\n\nQuestion: {question}\nAnswer:"""
 )
-rag_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-rag_chain = GEN_PROMPT | rag_llm | StrOutputParser()
+rag_chain = GEN_PROMPT | llm_base | StrOutputParser()
 
+# — Web search fallback -------------------------------------------------------
 web_search_tool = TavilySearchResults(k=3)
 
 # ----------------------------------------------------------------------------
-# 4. LangGraph state machine
+# 4. LangGraph workflow
 # ----------------------------------------------------------------------------
 class GraphState(TypedDict):
     question: str
@@ -140,27 +118,22 @@ class GraphState(TypedDict):
 
 
 def _retrieve(state: GraphState):
-    q = state["question"]
-    return {"documents": retriever.get_relevant_documents(q), "question": q}
+    return {"documents": retriever.invoke(state["question"]), "question": state["question"]}
 
 
 def _grade(state: GraphState):
     q, docs = state["question"], state["documents"]
-    filtered: List[Document] = []
-    need_search = "No"
+    relevant, search_flag = [], "No"
     for d in docs:
-        if retrieval_grader.invoke({"question": q, "document": d.page_content}).binary_score == "yes":
-            filtered.append(d)
+        if retrieval_grader.invoke({"question": q, "document": d.page_content}).strip().lower().startswith("yes"):
+            relevant.append(d)
         else:
-            need_search = "Yes"
-    return {"documents": filtered, "question": q, "web_search": need_search}
+            search_flag = "Yes"
+    return {"documents": relevant, "question": q, "web_search": search_flag}
 
 
 def _rewrite(state: GraphState):
-    return {
-        "documents": state["documents"],
-        "question": question_rewriter.invoke({"question": state["question"]}),
-    }
+    return {"documents": state["documents"], "question": question_rewriter.invoke({"question": state["question"]})}
 
 
 def _search(state: GraphState):
@@ -171,13 +144,15 @@ def _search(state: GraphState):
 
 
 def _generate(state: GraphState):
-    answer = rag_chain.invoke({"context": state["documents"], "question": state["question"]})
-    return {"documents": state["documents"], "question": state["question"], "generation": answer}
+    return {
+        "documents": state["documents"],
+        "question": state["question"],
+        "generation": rag_chain.invoke({"context": state["documents"], "question": state["question"]}),
+    }
 
 
 def _decide(state: GraphState):
     return "_rewrite" if state["web_search"] == "Yes" else "_generate"
-
 
 workflow = StateGraph(GraphState)
 workflow.add_node("_retrieve", _retrieve)
@@ -200,7 +175,13 @@ def answer_question(question: str) -> str:
 # ----------------------------------------------------------------------------
 # 5. FastAPI server
 # ----------------------------------------------------------------------------
-app = FastAPI(title="LangChain RAG Backend")
+app = FastAPI(title="LangChain RAG Backend (Groq Llama)")
+
+from frontend.ui import demo  # import the Gradio Blocks instance
+import gradio as gr
+
+# mount the UI at "/"
+app = gr.mount_gradio_app(app, demo, path="/ui")
 
 class QuestionIn(BaseModel):
     question: str
@@ -212,8 +193,10 @@ async def chat(payload: QuestionIn):
     try:
         return {"answer": answer_question(payload.question)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        import traceback
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"{str(e)}{tb}")
 
 @app.get("/")
 async def root():
-    return {"msg": "Backend running. POST JSON → /chat {\"question\": \"...\"}"}
+    return {"msg": f"Backend running. POST JSON → /chat {{\"question\": \"...\"}}. Model: {GROQ_MODEL}"}
