@@ -1,91 +1,136 @@
-# RAG Virtual Assistant Course
+# Greek Economy RAG Assistant
 
-A repository for building a Retrieval-Augmented Generation (RAG) virtual assistant.
+A Retrieval-Augmented Generation (RAG) virtual assistant built with LangChain and FastAPI to answer questions about the Greek economy using authoritative sources like Bank of Greece, Eurostat, and IMF documents.
 
-## 1. Clone the repository
+
+![App Screenshot](./data/images/rag_example.png)
+
+
+## Features
+
+- Multi-query vector search using LangChain
+- Re-ranking of documents via LLM grading
+- Fallback to web search (Tavily) when no internal documents match
+- FastAPI backend with optional Gradio UI
+- LangSmith integration for evaluation and tracing
+
+---
+
+##  Setup Instructions
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/PantosThn/rag-virtual-assistant-course.git
 cd rag-virtual-assistant-course
 ```
 
-## 2. Install Python 3.10
+### 2. Install Python 3.10
 
-Ensure you have **Python 3.10** installed.
+> Ensure Python 3.10 is installed. If not, use one of the methods below:
 
-- **macOS (Homebrew)**  
+- **macOS**
   ```bash
   brew install python@3.10
   ```
-- **Ubuntu / Debian**  
+- **Ubuntu**
   ```bash
   sudo apt update
   sudo apt install python3.10 python3.10-venv python3.10-dev
   ```
 - **Windows**  
-  Download and install from the [official Python 3.10 release](https://www.python.org/downloads/release/python-3100/).
+  Download from [python.org](https://www.python.org/downloads/release/python-3100/)
 
-Verify the installation:
+---
 
-```bash
-python3.10 --version
-```
+### 3. Install Poetry
 
-> If `python3.10` isn’t recognized on Windows, try `python --version`.
-
-## 3. Install Poetry
-
-### macOS & Linux
+#### macOS & Linux
 
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-### Windows (Git Bash)
 
-1. **Add Poetry to your PATH**  
-   ```bash
-   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-   source ~/.bashrc
-   ```
-2. **Install pipx & Poetry**  
-   ```bash
-   python -m pip install --user pipx
-   python -m pipx ensurepath
-   pipx install poetry
-   ```
-3. **Verify**  
-   ```bash
-   poetry --version
-   # → Poetry (version X.Y.Z)
-   ```
+After installation, verify with:
 
-### Windows (PowerShell)
-
-```powershell
-(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+```bash
 poetry --version
 ```
 
-## 4. Install project dependencies
+---
 
-Inside the project root:
+### 4. Install Dependencies
 
 ```bash
 poetry install
 ```
 
-## 5. Usage
+---
 
-- **Activate a shell**  
-  ```bash
-  poetry shell
-  ```
-- **Run a script**  
-  ```bash
-  poetry run python your_script.py
-  ```
+### 5. 🔐 Environment Configuration
+
+Before running the project, create a `.env` file in the project root directory with the following contents:
+
+<details>
+<summary>Click to expand .env example</summary>
+
+```env
+# Option 1: Recommended (Groq)
+GROQ_API_KEY=your-groq-api-key
+
+# Option 2: OpenAI (if you have one)
+OPENAI_API_KEY=your-openai-api-key
+
+# Optional LangChain settings for LangSmith
+LANGCHAIN_API_KEY=your-langsmith-api-key
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+USER_AGENT=Mozilla/5.0 (compatible; RAG-TutorialBot/1.0; +https://yourwebsite.com/bot)
+
+# Optional Web Search
+TAVILY_API_KEY=your-tavily-api-key
+```
+
+</details>
+
+### 6. Usage
+
+#### Activate Environment
+
+```bash
+poetry shell
+```
+
+#### Run the Backend (FastAPI)
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+#### Access Gradio UI (optional)
+
+Visit [http://localhost:8000/ui](http://localhost:8000/ui) in your browser.
 
 ---
 
-Feel free to customize any step to fit your environment!
+## Evaluation (optional)
+
+LangSmith integration is included for tracing and QA evaluation. You can create a dataset, log traces and run evaluations directly with:
+
+```bash
+poetry run python eval/run_eval.py
+```
+
+---
+
+## Powered By
+
+- LangChain
+- OpenAI / Groq
+- ChromaDB
+- Tavily (for web search fallback)
+- Gradio + FastAPI
+- LangSmith
+
+---

@@ -5,10 +5,11 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000/chat")
 
 DESCRIPTION = """
 <div style="text-align:center">
-  <h1>📊 Greek Economy RAG Assistant</h1>
-  <p style="font-size:18px;color:gray">Ask about GDP, inflation, debt, NRRP, HAPS, OCW and more.</p>
+  <h1>📈 Greek Economy RAG Assistant</h1>
+  <p style="font-size:18px;color:gray">Explore insights on GDP, inflation, debt, NRRP, HAPS, OCW, and more.</p>
 </div>
 """
+
 
 def query_backend(q: str):
     r = requests.post(BACKEND_URL, json={"question": q}, timeout=45)
