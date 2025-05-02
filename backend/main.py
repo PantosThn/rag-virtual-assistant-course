@@ -1,211 +1,219 @@
-# backend/main.py – REST-only backend for your LangChain RAG pipeline
-# ----------------------------------------------------------------------------
-#  ▸ Starts a FastAPI server exposing a single POST /chat endpoint
-#  ▸ All RAG logic (vector store build, graph compile, answer_question) lives
-#    in this file so the front-end can stay completely decoupled.
-#
-#  Run locally:
-#     uvicorn backend.main:app --reload
-# ----------------------------------------------------------------------------
-#  Environment variables required at runtime (export or put in .env):
-#     GROQ_API_KEY        – your Groq API key
-#     TAVILY_API_KEY      – your Tavily Search API key
-# ----------------------------------------------------------------------------
-
+# backend/main.py – GPT‑4‑o RAG with multi‑query + grading + fallback web search
+# ────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
-
-import os
+import os, requests
 from pathlib import Path
+from functools import lru_cache
 from typing import List, TypedDict
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-# LangChain & friends ---------------------------------------------------------
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.schema import Document
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
-from langchain_openai import ChatOpenAI
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-
-
-from dotenv import load_dotenv
-
-# ----------------------------------------------------------------------------
-# 1. Load environment and validate keys
-# ----------------------------------------------------------------------------
-ROOT_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT_DIR / ".env")
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
-openai_key = os.getenv("OPENAI_API_KEY")
-
-if not GROQ_API_KEY:
-    raise RuntimeError("Missing GROQ_API_KEY. Set it in .env or export it.")
-
-# ----------------------------------------------------------------------------
-# 2. Build vector store from static web docs
-# ----------------------------------------------------------------------------
-URLS = [
-    "https://www.reuters.com/world/europe/greece-ask-eu-fiscal-leeway-defence-spending-minister-says-2025-04-29/",
-        "https://www.ekathimerini.com/economy/1264299/moodys-upgrade-of-the-greek-economy-is-significant-says-govt-spox/",
-        "https://www.imf.org/en/News/Articles/2025/04/04/pr2589-greece-imf-executive-board-concludes-2025-article-iv-consultation",
-        "https://economy-finance.ec.europa.eu/economic-surveillance-eu-economies/greece/economic-forecast-greece_en",
-        "https://www.reuters.com/markets/europe/greece-repay-first-bailout-loans-by-2031-10-years-early-2025-04-11/",
-        "https://www.reuters.com/world/europe/bribery-scandals-greeces-public-sector-show-persistence-corruption-2025-03-27",
-        "https://www.reuters.com/markets/europe/greek-economy-surges-after-decade-pain-2024-04-18/"
-]
-
-print("[backend] Building vector store – may take ~30s on first run …")
-_raw_docs: List[Document] = []
-for url in URLS:
-    _raw_docs.extend(WebBaseLoader(url).load())
-
-splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=250)
-_doc_chunks = splitter.split_documents(_raw_docs)
-
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-# embeddings = OpenAIEmbeddings()
-
-vectorstore = Chroma.from_documents(
-    documents=_doc_chunks,
-    collection_name="rag-chroma",
-    embedding=embeddings,
-)
-retriever = vectorstore.as_retriever()
-
-# ----------------------------------------------------------------------------
-# 3. LLM helper chains (powered by Groq-compatible ChatOpenAI)
-# ----------------------------------------------------------------------------
-llm_base = ChatOpenAI(
-    model_name=GROQ_MODEL,
-    temperature=0,
-    openai_api_key=GROQ_API_KEY,
-    openai_api_base="https://api.groq.com/openai/v1",
-    model_kwargs={"response_format": {"type": "text"}},
-)
-
-# — Retrieval grader ----------------------------------------------------------
-GRADER_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", "You are a grader assessing relevance of a retrieved document to a user question. Answer strictly with 'yes' or 'no'."),
-    ("human", "Document:\n{document}\n\nQuestion: {question}"),
-])
-retrieval_grader = GRADER_PROMPT | llm_base | StrOutputParser()
-
-# — Question rewriter --------------------------------------------------------- ---------------------------------------------------------
-REWRITE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", "You rewrite the input question to a version better suited for web search, preserving meaning."),
-    ("human", "Original: {question}\nRewritten:"),
-])
-question_rewriter = REWRITE_PROMPT | llm_base | StrOutputParser()
-
-# — RAG answer generation -----------------------------------------------------
-GEN_PROMPT = ChatPromptTemplate.from_template(
-    """Answer the question using only the context provided. If the context is insufficient, say you don't know.\n\n{context}\n\nQuestion: {question}\nAnswer:"""
-)
-rag_chain = GEN_PROMPT | llm_base | StrOutputParser()
-
-# — Web search fallback -------------------------------------------------------
-web_search_tool = TavilySearchResults(k=3)
-
-# ----------------------------------------------------------------------------
-# 4. LangGraph workflow
-# ----------------------------------------------------------------------------
-class GraphState(TypedDict):
-    question: str
-    generation: str
-    web_search: str
-    documents: List[Document]
-
-
-def _retrieve(state: GraphState):
-    return {"documents": retriever.invoke(state["question"]), "question": state["question"]}
-
-
-def _grade(state: GraphState):
-    q, docs = state["question"], state["documents"]
-    relevant, search_flag = [], "No"
-    for d in docs:
-        if retrieval_grader.invoke({"question": q, "document": d.page_content}).strip().lower().startswith("yes"):
-            relevant.append(d)
-        else:
-            search_flag = "Yes"
-    return {"documents": relevant, "question": q, "web_search": search_flag}
-
-
-def _rewrite(state: GraphState):
-    return {"documents": state["documents"], "question": question_rewriter.invoke({"question": state["question"]})}
-
-
-def _search(state: GraphState):
-    q, docs = state["question"], state["documents"]
-    results = web_search_tool.invoke({"query": q})
-    docs.append(Document(page_content="\n".join(r["content"] for r in results)))
-    return {"documents": docs, "question": q}
-
-
-def _generate(state: GraphState):
-    return {
-        "documents": state["documents"],
-        "question": state["question"],
-        "generation": rag_chain.invoke({"context": state["documents"], "question": state["question"]}),
-    }
-
-
-def _decide(state: GraphState):
-    return "_rewrite" if state["web_search"] == "Yes" else "_generate"
-
-workflow = StateGraph(GraphState)
-workflow.add_node("_retrieve", _retrieve)
-workflow.add_node("_grade", _grade)
-workflow.add_node("_rewrite", _rewrite)
-workflow.add_node("_search", _search)
-workflow.add_node("_generate", _generate)
-workflow.add_edge(START, "_retrieve")
-workflow.add_edge("_retrieve", "_grade")
-workflow.add_conditional_edges("_grade", _decide, {"_rewrite": "_rewrite", "_generate": "_generate"})
-workflow.add_edge("_rewrite", "_search")
-workflow.add_edge("_search", "_generate")
-workflow.add_edge("_generate", END)
-_graph = workflow.compile()
-
-
-def answer_question(question: str) -> str:
-    return _graph.invoke({"question": question})["generation"]
-
-# ----------------------------------------------------------------------------
-# 5. FastAPI server
-# ----------------------------------------------------------------------------
-app = FastAPI(title="LangChain RAG Backend (Groq Llama)")
-
-from frontend.ui import demo  # import the Gradio Blocks instance
 import gradio as gr
 
-# mount the UI at "/"
-app = gr.mount_gradio_app(app, demo, path="/ui")
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings   # fallback for Groq
 
-class QuestionIn(BaseModel):
+
+# 1. ENV + model pick
+
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+
+if not (OPENAI_API_KEY or GROQ_API_KEY):
+    raise RuntimeError("Provide OPENAI_API_KEY or GROQ_API_KEY in .env")
+
+@lru_cache
+def pick_models():
+    if OPENAI_API_KEY:
+        llm_full = ChatOpenAI(model_name="gpt-4o",
+                              temperature=0,
+                              openai_api_key=OPENAI_API_KEY)
+        llm_mini = ChatOpenAI(model_name="gpt-4o-mini",
+                              temperature=0,
+                              openai_api_key=OPENAI_API_KEY)
+        emb      = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+        src = "GPT‑4‑o (full & mini)"
+    else:
+        llm_full = llm_mini = ChatOpenAI(
+            model_name=os.getenv("GROQ_MODEL", "llama3-70b-8192"),
+            temperature=0,
+            openai_api_key=GROQ_API_KEY,
+            openai_api_base="https://api.groq.com/openai/v1")
+        emb = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        src = "Groq + HF‑embeddings (fallback)"
+    print(f"[backend] ✅ Using {src}")
+    return emb, llm_full, llm_mini
+
+embeddings, llm_full, llm_mini = pick_models()
+
+
+# 2. Vector‑store (Chroma) + ingestion
+
+DATA_DIR   = ROOT / "data"; DATA_DIR.mkdir(exist_ok=True)
+CHROMA_DIR = ROOT / "chroma_store"
+
+vectorstore = Chroma(persist_directory=str(CHROMA_DIR),
+                     embedding_function=embeddings)
+
+splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+    chunk_size=1200, chunk_overlap=0
+)
+
+def ingest(docs: List[Document]) -> int:
+    if not docs:
+        return 0
+    chunks = [c for c in splitter.split_documents(docs)
+              if c.page_content.strip()]
+    vectorstore.add_documents(chunks)
+    vectorstore.persist()
+    return len(chunks)
+
+# first‑time ingest of PDFs/TXTs dropped into /data
+docs: List[Document] = []
+for fp in DATA_DIR.rglob("*"):
+    if fp.suffix.lower() == ".pdf":
+        docs.extend(PyPDFLoader(str(fp)).load())
+    elif fp.suffix.lower() in {".txt", ".text"}:
+        docs.extend(TextLoader(str(fp)).load())
+if docs:
+    print(f"[backend] +{ingest(docs):,} chunks ingested from /data")
+
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+print("[backend] 🏁 Chroma ready  (docs:", vectorstore._collection.count(), ")")
+
+
+# 3. Prompt templates & chains
+
+MULTI_REWRITE = ChatPromptTemplate.from_messages([
+    ("system",
+     "Rewrite the user query in three *different* ways that could improve "
+     "vector search recall. One per line, no bullets."),
+    ("human", "Original: {question}\nRewrites:")
+]) | llm_full | StrOutputParser()
+
+GRADER = ChatPromptTemplate.from_messages([
+    ("system",
+     "Answer ONLY 'Yes' if the document might help answer the question, else 'No'."),
+    ("human", "Document:\n{document}\n\nQuestion: {question}")
+]) | llm_mini | StrOutputParser()
+
+GEN_PROMPT = ChatPromptTemplate.from_template(
+    "Answer using only the context below. "
+    "If insufficient, share any partial info you have **and** explicitly say "
+    "\"I don't know\" where details are missing.\n\n{context}\n\n"
+    "Question: {question}\nAnswer:"
+) | llm_full | StrOutputParser()
+
+web_search = TavilySearchResults(k=3, tavily_api_key=TAVILY_API_KEY) \
+             if TAVILY_API_KEY else None
+
+
+# 4. LangGraph workflow
+
+class State(TypedDict):
+    question:   str
+    rewrites:   List[str]
+    documents:  List[Document]
+    generation: str
+    route:      str          # control flow
+
+# ---  nodes ---------------------------------------------------------------
+def _rewrite(s: State):
+    rew = MULTI_REWRITE.invoke({"question": s["question"]})
+    lines = [r.strip() for r in rew.splitlines() if r.strip()]
+    return {"rewrites": [s["question"], *lines]}
+
+def _retrieve(s: State):
+    all_docs: List[Document] = []
+    for q in s["rewrites"]:
+        all_docs.extend(retriever.invoke(q))
+    return {"documents": all_docs}
+
+def _grade(s: State):
+    q, scored = s["question"], []
+    for d in s["documents"]:
+        if GRADER.invoke({"question": q, "document": d.page_content}).lower().startswith("yes"):
+            scored.append(d)
+    print(f"[grader] kept {len(scored)}/{len(s['documents'])}")
+    if scored:
+        return {"documents": scored, "route": "have_ctx"}
+    return {"documents": scored, "route": "need_web"}
+
+def _web(s: State):
+    if not web_search:
+        return s
+    results = web_search.invoke({"query": s["question"]})
+    joined = "\n".join(r["content"] for r in results)
+    return {"documents": s["documents"] + [Document(page_content=joined)]}
+
+def _generate(s: State):
+    return {"generation":
+            GEN_PROMPT.invoke({"context": s["documents"],
+                               "question": s["question"]})}
+
+# ---  graph ---------------------------------------------------------------
+g = StateGraph(State)
+g.add_node("_rewrite",   _rewrite)
+g.add_node("_retrieve",  _retrieve)
+g.add_node("_grade",     _grade)
+g.add_node("_web",       _web)
+g.add_node("_generate",  _generate)
+
+g.add_edge(START,        "_rewrite")
+g.add_edge("_rewrite",   "_retrieve")
+g.add_edge("_retrieve",  "_grade")
+g.add_conditional_edges("_grade", lambda s: s["route"],
+                        {"have_ctx": "_generate",
+                         "need_web": "_web"})
+g.add_edge("_web",       "_generate")
+g.add_edge("_generate",  END)
+
+graph = g.compile()
+
+def answer(q: str) -> str:
+    return graph.invoke({"question": q})["generation"]
+
+
+# 5. FastAPI (+ optional Gradio)
+
+app = FastAPI(title="Greek‑Economy RAG Backend")
+
+try:
+    from frontend.ui import demo
+    app = gr.mount_gradio_app(app, demo, path="/ui")
+    print("[backend] ✅ Gradio UI at /ui")
+except Exception:
+    print("[backend] ⚠️ No Gradio UI")
+
+class QIn(BaseModel):
     question: str
 
 @app.post("/chat")
-async def chat(payload: QuestionIn):
-    if not payload.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+async def chat(req: Request):
     try:
-        return {"answer": answer_question(payload.question)}
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        raise HTTPException(status_code=500, detail=f"{str(e)}{tb}")
+        data = await req.json(); q = (data.get("question") or "").strip()
+    except Exception:
+        q = (await req.body()).decode().strip()
+    if not q:
+        return {"answer": "Please ask a question about the Greek economy."}
+    return {"answer": answer(q)}
 
 @app.get("/")
 async def root():
-    return {"msg": f"Backend running. POST JSON → /chat {{\"question\": \"...\"}}. Model: {GROQ_MODEL}"}
+    return {"msg": "Backend running. POST {'question': '…'} to /chat",
+            "llm_full": llm_full.model_name,
+            "llm_grader": llm_mini.model_name}

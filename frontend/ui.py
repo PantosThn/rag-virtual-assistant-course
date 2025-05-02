@@ -1,86 +1,87 @@
-# frontend/ui.py — Enhanced Gradio UI for RAG chatbot focused on Greek economy
-import gradio as gr
-import requests
-import os
-import time
+# frontend/ui.py — Greek‑Economy Chatbot with live status bubbles
+import os, time, requests, gradio as gr
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000/chat")
 
 DESCRIPTION = """
-<div style="text-align: center">
-    <h1>📊 Greek Economy RAG Assistant</h1>
-    <p style="font-size: 18px; color: gray">
-        Explore inflation, GDP, debt, unemployment, and more through intelligent retrieval-augmented dialogue.
-    </p>
+<div style="text-align:center">
+  <h1>📊 Greek Economy RAG Assistant</h1>
+  <p style="font-size:18px;color:gray">Ask about GDP, inflation, debt, NRRP, HAPS, OCW and more.</p>
 </div>
 """
 
-# --- Backend call (supports streaming simulation) ---------------------------
-def chat_with_rag(message, history):
+# ---------------------------------------------------------------------------
+# Helper to call backend
+# ---------------------------------------------------------------------------
+
+def query_backend(q: str):
+    r = requests.post(BACKEND_URL, json={"question": q}, timeout=45)
+    r.raise_for_status()
+    return r.json().get("answer", "No answer returned.")
+
+# ---------------------------------------------------------------------------
+# Streaming callback — shows a status bubble while waiting
+# ---------------------------------------------------------------------------
+
+def stream_with_rag(message: str, history: list):
+    message = (message or "").strip()
+    if not message:
+        yield "", history
+        return
+
+    # 1) Echo user
+    history = history + [{"role": "user", "content": message}]
+    yield "", history
+
+    # 2) Add temporary assistant state
+    history = history + [{"role": "assistant", "content": "⏳ Thinking…"}]
+    yield "", history
+
+    # 3) Call backend
     try:
-        resp = requests.post(BACKEND_URL, json={"question": message})
-        resp.raise_for_status()
-        answer = resp.json().get("answer", "No answer returned.")
+        answer = query_backend(message)
     except Exception as e:
-        answer = f"❌ Error: {str(e)}"
+        answer = f"❌ Error: {e}"
 
-    history.append({"role": "user", "content": message})
-    history.append({"role": "assistant", "content": answer})
-    return "", history
-
-
-# Streaming simulation (not token-by-token unless backend supports it)
-def stream_with_rag(message, history):
-    yield "", history + [{"role": "user", "content": message}]
-    try:
-        resp = requests.post(BACKEND_URL, json={"question": message})
-        resp.raise_for_status()
-        answer = resp.json().get("answer", "No answer returned.")
-    except Exception as e:
-        answer = f"❌ Error: {str(e)}"
-
+    # 4) Stream word‑by‑word
     streamed = ""
     for word in answer.split():
         streamed += word + " "
-        time.sleep(0.03)  # simulate streaming effect
-        yield "", history + [
-            {"role": "user", "content": message},
-            {"role": "assistant", "content": streamed.strip()}
-        ]
+        history[-1]["content"] = streamed.strip()
+        time.sleep(0.02)
+        yield "", history
 
+    # final yield to ensure last word rendered
+    yield "", history
 
-# Reset function
+# ---------------------------------------------------------------------------
+# Reset
+# ---------------------------------------------------------------------------
+
 def reset():
     return "", []
 
-
-# --- Interface --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# UI layout
+# ---------------------------------------------------------------------------
 with gr.Blocks(title="Greek Economy Chatbot", theme=gr.themes.Soft()) as demo:
     gr.HTML(DESCRIPTION)
 
+    chatbot    = gr.Chatbot(height=420, label="Dialogue", type="messages")
+    user_input = gr.Textbox(placeholder="Ask about Greek economic trends…", show_label=False)
+
+    gr.Examples([
+    "what does the imf say about greek recovery?",
+    "What was the average headline inflation rate for Greece in 2024, and how did it compare to the euro area average?"
+    ], inputs=user_input)
+
     with gr.Row():
-        with gr.Column(scale=4):
-            chatbot = gr.Chatbot(label="💬 Dialogue", type="messages", height=400)
-            user_input = gr.Textbox(placeholder="Ask something about Greek economic trends…", show_label=False)
+        send_btn  = gr.Button("📤 Send", variant="primary")
+        clear_btn = gr.Button("🔄 Reset")
 
-            gr.Examples(
-                examples=[
-                    "What are the implications of Greece's request to exempt €500 million in defense spending from EU fiscal rules?",
-                    "How significant is Moody's upgrade of Greece's economy to investment grade?",
-                    "What are the key takeaways from the IMF's 2025 Article IV consultation with Greece?",
-                    "How is Greece planning to repay its first bailout loans ahead of schedule?"
-                ],
-                inputs=user_input,
-            )
-
-            with gr.Row():
-                submit = gr.Button("📤 Send", variant="primary")
-                clear = gr.Button("🔄 Reset")
-
-
-    submit.click(stream_with_rag, [user_input, chatbot], [user_input, chatbot], show_progress=True)
-    user_input.submit(stream_with_rag, [user_input, chatbot], [user_input, chatbot], show_progress=True)
-    clear.click(reset, outputs=[user_input, chatbot])
+    send_btn.click(stream_with_rag, [user_input, chatbot], [user_input, chatbot])
+    user_input.submit(stream_with_rag, [user_input, chatbot], [user_input, chatbot])
+    clear_btn.click(reset, outputs=[user_input, chatbot])
 
 if __name__ == "__main__":
     demo.launch()
