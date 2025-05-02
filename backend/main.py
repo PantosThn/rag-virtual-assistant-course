@@ -12,16 +12,16 @@ from pydantic import BaseModel
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.schema import Document
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
 import gradio as gr
-
+from langsmith import traceable
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_huggingface import HuggingFaceEmbeddings   # fallback for Groq
+from langchain_huggingface import HuggingFaceEmbeddings
 
 
 # 1. ENV + model pick
@@ -66,8 +66,11 @@ embeddings, llm_full, llm_mini = pick_models()
 DATA_DIR   = ROOT / "data"; DATA_DIR.mkdir(exist_ok=True)
 CHROMA_DIR = ROOT / "chroma_store"
 
-vectorstore = Chroma(persist_directory=str(CHROMA_DIR),
-                     embedding_function=embeddings)
+vectorstore = Chroma(
+    embedding_function=embeddings,
+    persist_directory=str(CHROMA_DIR),
+    collection_name="your_collection_name"  # Replace with your actual collection name
+)
 
 splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
     chunk_size=1200, chunk_overlap=0
@@ -79,7 +82,7 @@ def ingest(docs: List[Document]) -> int:
     chunks = [c for c in splitter.split_documents(docs)
               if c.page_content.strip()]
     vectorstore.add_documents(chunks)
-    vectorstore.persist()
+
     return len(chunks)
 
 # first‑time ingest of PDFs/TXTs dropped into /data
@@ -184,8 +187,15 @@ g.add_edge("_generate",  END)
 
 graph = g.compile()
 
-def answer(q: str) -> str:
-    return graph.invoke({"question": q})["generation"]
+
+@traceable(name="rag_backend.answer")
+def answer(q: str) -> dict:
+    state = graph.invoke({"question": q})
+    return {
+        "answer": state["generation"],
+        "references": [doc.page_content for doc in state["documents"]],
+    }
+
 
 
 # 5. FastAPI (+ optional Gradio)
@@ -205,12 +215,15 @@ class QIn(BaseModel):
 @app.post("/chat")
 async def chat(req: Request):
     try:
-        data = await req.json(); q = (data.get("question") or "").strip()
+        data = await req.json()
+        q = (data.get("question") or "").strip()
     except Exception:
         q = (await req.body()).decode().strip()
     if not q:
         return {"answer": "Please ask a question about the Greek economy."}
-    return {"answer": answer(q)}
+    
+    result = answer(q)
+    return {"answer": result["answer"]}  # hide references here
 
 @app.get("/")
 async def root():

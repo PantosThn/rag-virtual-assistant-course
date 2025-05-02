@@ -10,18 +10,11 @@ DESCRIPTION = """
 </div>
 """
 
-# ---------------------------------------------------------------------------
-# Helper to call backend
-# ---------------------------------------------------------------------------
-
 def query_backend(q: str):
     r = requests.post(BACKEND_URL, json={"question": q}, timeout=45)
     r.raise_for_status()
     return r.json().get("answer", "No answer returned.")
 
-# ---------------------------------------------------------------------------
-# Streaming callback — shows a status bubble while waiting
-# ---------------------------------------------------------------------------
 
 def stream_with_rag(message: str, history: list):
     message = (message or "").strip()
@@ -54,16 +47,10 @@ def stream_with_rag(message: str, history: list):
     # final yield to ensure last word rendered
     yield "", history
 
-# ---------------------------------------------------------------------------
-# Reset
-# ---------------------------------------------------------------------------
 
 def reset():
     return "", []
 
-# ---------------------------------------------------------------------------
-# UI layout
-# ---------------------------------------------------------------------------
 with gr.Blocks(title="Greek Economy Chatbot", theme=gr.themes.Soft()) as demo:
     gr.HTML(DESCRIPTION)
 
@@ -72,7 +59,8 @@ with gr.Blocks(title="Greek Economy Chatbot", theme=gr.themes.Soft()) as demo:
 
     gr.Examples([
     "what does the imf say about greek recovery?",
-    "What was the average headline inflation rate for Greece in 2024, and how did it compare to the euro area average?"
+    "What was the average headline inflation rate for Greece in 2024, and how did it compare to the euro area average?",
+    "According to the 2024 Ageing Report, how is Greece’s public pension expenditure as a percentage of GDP expected to evolve by 2070, and how does it compare to the EU average?"
     ], inputs=user_input)
 
     with gr.Row():

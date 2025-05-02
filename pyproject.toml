@@ -12,7 +12,6 @@ langchain = "^0.3.24"
 langchain-community = "^0.3.23"
 langchain-openai = "^0.3.14"
 langchainhub = "^0.1.21"
-chromadb = "^1.0.7"
 tiktoken = "^0.9.0"
 notebook = "^7.4.1"
 python-dotenv = "^1.1.0"
@@ -25,6 +24,8 @@ gradio = "^5.28.0"
 certifi = "^2025.4.26"
 uvicorn = "^0.34.2"
 pypdf = "^5.4.0"
+langsmith = "^0.3.40"
+langchain-chroma = "^0.2.3"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
