@@ -114,12 +114,11 @@ Visit [http://localhost:8000/ui](http://localhost:8000/ui) in your browser.
 
 ---
 
-## Evaluation (optional)
+## How to run 
 
-LangSmith integration is included for tracing and QA evaluation. You can create a dataset, log traces and run evaluations directly with:
 
 ```bash
-poetry run python eval/run_eval.py
+poetry run uvicorn backend.main:app --reload
 ```
 
 ---
