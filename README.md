@@ -134,7 +134,8 @@ uvicorn backend.main:app --reload
 #### Access Gradio UI (optional)
 
 Visit 
-```bash[http://localhost:8000/ui](http://localhost:8000/ui)
+```bash
+[http://localhost:8000/ui](http://localhost:8000/ui)
 ```
 in your browser.
 
