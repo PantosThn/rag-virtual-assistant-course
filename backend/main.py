@@ -56,7 +56,7 @@ def pick_models() -> tuple:
             openai_api_base="https://api.groq.com/openai/v1")
         emb = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         src = "Groq + HF‑embeddings (fallback)"
-    print(f"[backend] ✅ Using {src}")
+    print(f"[backend] Using {src}")
     return emb, llm_full, llm_mini
 
 embeddings, llm_full, llm_mini = pick_models()

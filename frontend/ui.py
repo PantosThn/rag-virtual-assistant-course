@@ -35,7 +35,7 @@ def stream_with_rag(message: str, history: list):
     try:
         answer = query_backend(message)
     except Exception as e:
-        answer = f"❌ Error: {e}"
+        answer = f"Error: {e}"
 
     # 4) Stream word‑by‑word
     streamed = ""
