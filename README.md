@@ -43,7 +43,7 @@ cd rag-virtual-assistant-course
 
 ---
 
-## 🎼 3. Install Poetry
+##  3. Install Poetry
 
 ### On macOS & Linux
 
@@ -91,7 +91,7 @@ poetry install
 
 ---
 
-### 5. 🔐 Environment Configuration
+### 5.  Environment Configuration
 
 Before running the project, create a `.env` file in the project root directory with the following contents:
 
@@ -144,6 +144,9 @@ Visit [http://localhost:8000/ui](http://localhost:8000/ui) in your browser.
 poetry run uvicorn backend.main:app --reload
 ```
 
+```bash
+http://127.0.0.1:8000/ui/
+```
 ---
 
 ## Powered By
