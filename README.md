@@ -25,18 +25,18 @@ git clone https://github.com/PantosThn/rag-virtual-assistant-course.git
 cd rag-virtual-assistant-course
 ```
 
-### 2. Install Python 3.10
+### 2. Install Python 3.12
 
-> Ensure Python 3.10 is installed. If not, use one of the methods below:
+> Ensure Python 3.12 is installed. If not, use one of the methods below:
 
 - **macOS**
   ```bash
-  brew install python@3.10
+  brew install python@3.12
   ```
 - **Ubuntu**
   ```bash
   sudo apt update
-  sudo apt install python3.10 python3.10-venv python3.10-dev
+  sudo apt install python3.12 python3.12-venv python3.12-dev
   ```
 - **Windows**  
   Download from [python.org](https://www.python.org/downloads/release/python-3100/)
