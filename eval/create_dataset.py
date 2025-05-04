@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 
-import os
 from langsmith import Client
 
 DATASET_NAME = "Greek‑Economy‑RAG‑eval"
