@@ -137,18 +137,6 @@ Visit [http://localhost:8000/ui](http://localhost:8000/ui) in your browser.
 
 ---
 
-## How to run 
-
-
-```bash
-poetry run uvicorn backend.main:app --reload
-```
-
-```bash
-http://127.0.0.1:8000/ui/
-```
----
-
 ## Powered By
 
 - LangChain
