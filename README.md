@@ -43,20 +43,43 @@ cd rag-virtual-assistant-course
 
 ---
 
-### 3. Install Poetry
+## 🎼 3. Install Poetry
 
-#### macOS & Linux
+### On macOS & Linux
 
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
+### On Windows
 
-After installation, verify with:
+#### ➤ If using **PowerShell**:
+
+```powershell
+(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+```
+
+#### ➤ If using **Git Bash**:
 
 ```bash
-poetry --version
+curl -sSL https://install.python-poetry.org | python3 -
 ```
+
+Then add this line to your `~/.bashrc` (or `~/.bash_profile`):
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+And reload your shell:
+
+```bash
+source ~/.bashrc
+```
+
+> Verify installation with: `poetry --version`
+
+> 🔗 Official installer page: [https://python-poetry.org/docs/#installation](https://python-poetry.org/docs/#installation)
 
 ---
 
