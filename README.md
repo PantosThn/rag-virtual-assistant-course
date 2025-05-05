@@ -131,11 +131,14 @@ poetry shell
 uvicorn backend.main:app --reload
 ```
 
-#### Access Gradio UI (optional)
+#### Access Gradio UI
 
 Visit [http://localhost:8000/ui](http://localhost:8000/ui) in your browser.
 
-
+#### Run jupyter notebooks
+```bash
+poetry run jupyter notebook
+```
 ---
 
 ## Powered By
