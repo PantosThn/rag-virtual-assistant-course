@@ -114,15 +114,13 @@ USER_AGENT=Mozilla/5.0 (compatible; RAG-TutorialBot/1.0; +https://yourwebsite.co
 # Optional Web Search
 TAVILY_API_KEY=your-tavily-api-key
 ```
+</details>
 
 Make sure you have at least one of the following API keys (Groq or OpenAI):
 
 - **Groq API Key** (Recommended – Free and fast): [Create a Groq account](https://console.groq.com)
 - **OpenAI API Key**: [Create or view your OpenAI key](https://platform.openai.com/api-keys)
 - **LangSmith API Key** (Optional – for monitoring): [LangSmith settings](https://smith.langchain.com/o/0a40799b-2bb0-55cc-a7b6-c65896228e62/settings)
-
-
-</details>
 
 ### 6. Usage
 
