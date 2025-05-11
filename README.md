@@ -131,6 +131,12 @@ poetry shell
 uvicorn backend.main:app --reload
 ```
 
+#### Run the Jupyter Notebook
+
+```bash
+poetry run jupyter notebook
+```
+
 #### Access Gradio UI (optional)
 
 Visit [http://localhost:8000/ui](http://localhost:8000/ui) in your browser.
