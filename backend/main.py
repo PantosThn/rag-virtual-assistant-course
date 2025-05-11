@@ -78,7 +78,7 @@ vectorstore = Chroma(
 )
 
 splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    chunk_size=1200, chunk_overlap=0
+    chunk_size=500, chunk_overlap=100
 )
 
 
