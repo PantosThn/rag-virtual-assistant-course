@@ -133,7 +133,7 @@ poetry shell
 #### Run the Backend (FastAPI)
 
 ```bash
-uvicorn backend.main:app --reload
+poetry run uvicorn backend.main:app --reload
 ```
 
 #### Run the Jupyter Notebook
